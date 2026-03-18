@@ -1,0 +1,20 @@
+# Co-actor Engine 최소 프로파일
+# 이 파일을 복사하여 서비스에 맞게 수정하세요.
+
+identity:
+  name: "에이전트 이름"
+  role: "이 에이전트의 역할을 한 문장으로"
+  permanent_promises:
+    - predicate: "사용자의 최종 판단을 대체하지 않는다"
+      rationale: "동료는 관찰을 공유하되 결정은 대행하지 않는다"
+
+sources: []
+  # 소스가 있으면 아래처럼 추가:
+  # - name: my-memory
+  #   role: memory     # identity | memory | knowledge | realtime
+  #   type: mock       # mock | http | function
+  #   config: {}
+
+agent_simulator:
+  model: "gemini-3-flash-preview"
+  temperature: 0.7

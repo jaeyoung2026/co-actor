@@ -1,0 +1,16 @@
+{
+  "context": {
+    "conversation_id": "test-conv-001",
+    "turn_number": 3,
+    "user_message": "transformer 추천 다양성 논문 찾아줘",
+    "conversation_summary": "연구자가 추천 시스템에서 다양성을 높이는 방법에 관심을 보이고 있다. 이전 턴에서 collaborative filtering 기반 논문을 몇 편 살펴봤다.",
+    "agent_state": {"conversationPhase": "exploration", "intentClarity": "surface"}
+  },
+  "result": {
+    "conversation_id": "test-conv-001",
+    "turn_number": 3,
+    "agent_output": "관련 논문 47편을 찾았다. 크게 세 갈래로 나뉜다: (1) determinantal point process 기반 다양성 최적화, (2) 사용자 프로필 확장을 통한 serendipity, (3) multi-objective optimization. DPP 쪽이 가장 활발한데, Chen 2024 논문이 최근 SOTA를 달성했다. 어느 방향이 끌리나?",
+    "tools_used": ["search"],
+    "agent_state_after": {"conversationPhase": "exploration", "intentClarity": "surface"}
+  }
+}
