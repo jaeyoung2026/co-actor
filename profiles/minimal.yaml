@@ -1,5 +1,6 @@
-# Co-actor Engine 최소 프로파일
-# 이 파일을 복사하여 서비스에 맞게 수정하세요.
+# Co-actor 최소 프로파일
+# 이 파일을 복사하여 나만의 동료 에이전트를 만들어 보세요.
+# 또는 co-actor init 으로 대화형 생성도 가능합니다.
 
 identity:
   name: "에이전트 이름"
@@ -8,13 +9,24 @@ identity:
     - predicate: "사용자의 최종 판단을 대체하지 않는다"
       rationale: "동료는 관찰을 공유하되 결정은 대행하지 않는다"
 
-sources: []
-  # 소스가 있으면 아래처럼 추가:
-  # - name: my-memory
-  #   role: memory     # identity | memory | knowledge | realtime
-  #   type: mock       # mock | http | function
-  #   config: {}
+sources:
+  - name: identity
+    role: identity
+    type: builtin
+    config: {}
+  - name: conversation
+    role: realtime
+    type: builtin
+    config: {}
+  # 기억을 추가하려면:
+  # - name: memory
+  #   role: memory
+  #   type: builtin
+  #   config:
+  #     nodes_path: profiles/sample_data/my-agent.json
 
 agent_simulator:
   model: "gemini-3-flash-preview"
   temperature: 0.7
+  # system_prompt: |
+  #   에이전트의 시스템 프롬프트를 여기에 작성한다.

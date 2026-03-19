@@ -1,8 +1,23 @@
 [project]
-name = "par-loop"
-version = "0.1.0"
-description = "PAR Loop — Promise·Attention·Relationship 순환으로 에이전트 동료 품질을 점검하는 엔진"
+name = "co-actor"
+version = "0.2.0"
+description = "Co-actor — LLM을 동료(Co-actor) 에이전트로 빌드하는 프레임워크"
 requires-python = ">=3.11"
+license = "MIT"
+readme = "README.md"
+authors = [
+    { name = "Jaeyoung Kang" },
+]
+keywords = ["llm", "agent", "co-actor", "par-loop", "ai-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
     "pydantic>=2.0",
     "fastapi>=0.100",
@@ -15,9 +30,17 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 
+[project.urls]
+Homepage = "https://github.com/jaeyoung2026/co-actor"
+Repository = "https://github.com/jaeyoung2026/co-actor"
+
 [project.scripts]
-par-loop = "par_loop.cli:main"
+co-actor = "engine.cli:main"
+par-loop = "engine.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["engine", "adapters"]
 
 [build-system]
 requires = ["hatchling"]
-build-backend = "hatchling.backends"
+build-backend = "hatchling.build"

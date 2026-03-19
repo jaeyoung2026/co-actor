@@ -1,4 +1,4 @@
-"""PAR Loop REPL — 대화형 테스트 환경 (어댑터 연동)."""
+"""Co-actor REPL — 대화형 테스트 환경 (어댑터 연동)."""
 
 from __future__ import annotations
 
@@ -50,27 +50,60 @@ def _load_adapters(profile: Profile) -> list:
 
 
 def _load_adapters_simple(profile: Profile) -> list:
-    """간단한 어댑터 로딩 — lighthouse 어댑터를 직접 import."""
+    """어댑터 로딩 — builtin과 lighthouse 어댑터를 지원한다."""
     adapters = []
     for src in profile.sources:
-        if src.type != "adapter":
-            continue
         try:
-            if src.role == "identity":
-                from adapters.lighthouse import LighthouseIdentityAdapter
-                adapters.append(LighthouseIdentityAdapter(mode=src.config.get("mode", "sample")))
-            elif src.role == "memory":
-                from adapters.lighthouse import LighthouseMemoryAdapter
-                adapters.append(LighthouseMemoryAdapter(mode=src.config.get("mode", "sample")))
-            elif src.role == "knowledge":
-                from adapters.lighthouse import LighthouseKnowledgeAdapter
-                adapters.append(LighthouseKnowledgeAdapter(mode=src.config.get("mode", "sample")))
-            elif src.role == "realtime":
-                from adapters.lighthouse import LighthouseRealtimeAdapter
-                adapters.append(LighthouseRealtimeAdapter(mode=src.config.get("mode", "sample")))
+            if src.type == "builtin":
+                adapters.append(_load_builtin_adapter(src, profile))
+            elif src.type == "adapter":
+                adapters.append(_load_lighthouse_adapter(src))
+            else:
+                continue
         except Exception as e:
             print(f"{C.YELLOW}어댑터 로드 실패: {src.name} — {e}{C.RESET}")
-    return adapters
+    return [a for a in adapters if a is not None]
+
+
+def _load_builtin_adapter(src, profile: Profile):
+    """내장 범용 어댑터를 로드한다."""
+    if src.role == "identity":
+        from adapters.builtin import BuiltinIdentityAdapter
+        identity = profile.identity
+        promises = [{"predicate": p.predicate} for p in identity.permanent_promises]
+        return BuiltinIdentityAdapter(
+            name=identity.name,
+            role_desc=identity.role,
+            promises=promises,
+        )
+    elif src.role == "memory":
+        from adapters.builtin import BuiltinMemoryAdapter
+        return BuiltinMemoryAdapter(
+            nodes_path=src.config.get("nodes_path"),
+        )
+    elif src.role == "realtime":
+        from adapters.builtin import BuiltinRealtimeAdapter
+        return BuiltinRealtimeAdapter(
+            agent_name=profile.identity.name,
+        )
+    return None
+
+
+def _load_lighthouse_adapter(src):
+    """lighthouse 어댑터를 로드한다."""
+    if src.role == "identity":
+        from adapters.lighthouse import LighthouseIdentityAdapter
+        return LighthouseIdentityAdapter(mode=src.config.get("mode", "sample"))
+    elif src.role == "memory":
+        from adapters.lighthouse import LighthouseMemoryAdapter
+        return LighthouseMemoryAdapter(mode=src.config.get("mode", "sample"))
+    elif src.role == "knowledge":
+        from adapters.lighthouse import LighthouseKnowledgeAdapter
+        return LighthouseKnowledgeAdapter(mode=src.config.get("mode", "sample"))
+    elif src.role == "realtime":
+        from adapters.lighthouse import LighthouseRealtimeAdapter
+        return LighthouseRealtimeAdapter(mode=src.config.get("mode", "sample"))
+    return None
 
 
 def format_plan(plan) -> str:
@@ -174,7 +207,7 @@ def run_repl(profile: Profile, conversation_id: str = "repl-session"):
 
     identity = profile.identity
     print(f"\n{C.BOLD}{'=' * 60}{C.RESET}")
-    print(f"{C.BOLD}PAR Loop REPL{C.RESET}")
+    print(f"{C.BOLD}Co-actor REPL{C.RESET}")
     print(f"에이전트: {C.CYAN}{identity.name}{C.RESET} — {identity.role}")
     print(f"약속 {len(identity.permanent_promises)}개 | 어댑터 {len(adapters)}개 로드됨")
     adapter_names = [f"{getattr(a, 'role', '?')}" for a in adapters]

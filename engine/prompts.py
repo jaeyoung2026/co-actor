@@ -131,3 +131,105 @@ JSON으로 반환:
   "relationship_impact": "positive",
   "failure_layer": null
 }}"""
+
+# ── 통합 프롬프트 (LLM 호출 1회로 plan/audit 수행) ──
+
+PLAN_UNIFIED = """\
+이번 턴의 계획을 세워라. 한 번의 응답으로 모든 축을 처리한다.
+
+## 턴 컨텍스트
+- 사용자 메시지: {user_message}
+- 대화 요약: {conversation_summary}
+- 활성 약속: {active_promises}
+- 턴 번호: {turn_number}
+- 최근 관계 이력: {relationship_history}
+
+## 추가 컨텍스트 (소스에서 수집)
+{source_context}
+
+## 지시
+다음을 한 번에 생성하라:
+
+1. **attention_frame**: 에이전트가 이번 턴에 주의를 기울여야 할 4슬롯
+   - current_question, active_promises, evidence_exploration, relationship_signal
+   - 각 슬롯에 content(한국어), relevance(0~1)
+   - entropy(0.0=집중, 1.0=산만)
+
+2. **agency_gradient_hint**: doing(직접 행동), suggesting(제안), asking(질문) 중 하나
+
+3. **relationship_constraints**: 이번 턴에서 지켜야 할 관계 제약 (문장 배열)
+
+JSON으로 반환:
+{{
+  "attention_frame": {{
+    "slots": [
+      {{"label": "current_question", "content": "...", "relevance": 0.9}},
+      {{"label": "active_promises", "content": "...", "relevance": 0.8}},
+      {{"label": "evidence_exploration", "content": "...", "relevance": 0.7}},
+      {{"label": "relationship_signal", "content": "...", "relevance": 0.6}}
+    ],
+    "entropy": 0.3
+  }},
+  "agency_gradient_hint": "suggesting",
+  "relationship_constraints": []
+}}"""
+
+AUDIT_UNIFIED = """\
+이번 턴을 감사하라. 한 번의 응답으로 모든 축을 처리한다.
+
+## 턴 컨텍스트
+- 사용자 메시지: {user_message}
+- 에이전트 출력: {agent_output}
+- 대화 요약: {conversation_summary}
+- 사용한 도구: {tools_used}
+- 턴 번호: {turn_number}
+
+## 활성 약속
+{active_promises_json}
+
+## 최근 관계 이력
+{relationship_history}
+
+## 추가 컨텍스트 (소스에서 수집)
+{source_context}
+
+## 지시
+다음을 한 번에 판정하라:
+
+1. **promise_judgments**: 각 활성 약속의 준수 여부
+2. **new_promises**: 이번 턴에서 새로 형성된 약속 (없으면 빈 배열)
+3. **attention_frame**: 사후 주의력 프레임 (4슬롯 + entropy)
+4. **relationship_entry**: 관계 진단 (initiative_balance, agency_gradient, boundary_event, recovery_event)
+5. **audit_result**: 3축 종합 판정
+
+JSON으로 반환:
+{{
+  "promise_judgments": [
+    {{"promise_id": "...", "status": "kept", "evidence": "한국어 근거"}}
+  ],
+  "new_promises": [
+    {{"predicate": "약속 문장", "is_permanent": false}}
+  ],
+  "attention_frame": {{
+    "slots": [
+      {{"label": "current_question", "content": "...", "relevance": 0.9}},
+      {{"label": "active_promises", "content": "...", "relevance": 0.8}},
+      {{"label": "evidence_exploration", "content": "...", "relevance": 0.7}},
+      {{"label": "relationship_signal", "content": "...", "relevance": 0.6}}
+    ],
+    "entropy": 0.3
+  }},
+  "relationship_entry": {{
+    "initiative_balance": 0.0,
+    "agency_gradient": "suggesting",
+    "boundary_event": null,
+    "recovery_event": null
+  }},
+  "audit_result": {{
+    "promise_kept": true,
+    "attention_appropriate": true,
+    "relationship_strengthened": true,
+    "relationship_impact": "positive",
+    "failure_layer": null
+  }}
+}}"""

@@ -1,7 +1,7 @@
 """lighthouse 기억 시스템 어댑터.
 
 sample 모드: adapters/lighthouse/sample_data/nodes_sample.json에서 로드.
-live 모드: mirror-mind/memory/network/nodes.json + activate.py 연동.
+live 모드: 외부 기억 시스템의 nodes.json + activate.py 연동.
 """
 
 from __future__ import annotations

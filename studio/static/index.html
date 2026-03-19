@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Co-actor Studio</title>
+  <style>
+    :root {
+      --bg: #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2: #242424;
+      --border: #333;
+      --text: #e0e0e0;
+      --text-dim: #888;
+      --accent: #7c9cf5;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── 레이아웃 ── */
+    .app { display: flex; height: 100vh; }
+
+    .sidebar {
+      width: 320px;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .par-panel {
+      width: 360px;
+      border-left: 1px solid var(--border);
+      background: var(--surface);
+      overflow-y: auto;
+      padding: 20px;
+      display: none;
+    }
+
+    .par-panel.active { display: block; }
+
+    /* ── 사이드바 ── */
+    .sidebar-header {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-header h1 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .sidebar-header p {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    .profile-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .profile-card {
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+
+    .profile-card:hover {
+      border-color: var(--border);
+      background: var(--surface2);
+    }
+
+    .profile-card.selected {
+      border-color: var(--accent);
+      background: var(--surface2);
+    }
+
+    .profile-card .emoji {
+      font-size: 28px;
+      margin-bottom: 8px;
+    }
+
+    .profile-card .name {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .profile-card .desc {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+
+    /* ── 약속 뱃지 ── */
+    .promises-section {
+      padding: 16px 20px;
+      border-top: 1px solid var(--border);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .promises-section h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 8px;
+      letter-spacing: 0.5px;
+    }
+
+    .promise-badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      margin-bottom: 4px;
+      display: block;
+      color: var(--text-dim);
+    }
+
+    /* ── 메인: 빈 상태 ── */
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+    }
+
+    .empty-state .big-emoji { font-size: 48px; margin-bottom: 16px; }
+    .empty-state h2 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+    .empty-state p { font-size: 13px; }
+
+    /* ── 메인: 대화 ── */
+    .chat-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chat-header .agent-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .chat-header .agent-emoji { font-size: 24px; }
+    .chat-header .agent-name { font-weight: 600; font-size: 15px; }
+    .chat-header .agent-role { font-size: 12px; color: var(--text-dim); }
+
+    .par-toggle {
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    .par-toggle:hover { border-color: var(--accent); }
+    .par-toggle.active { border-color: var(--accent); color: var(--accent); }
+
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    .message {
+      margin-bottom: 20px;
+      max-width: 720px;
+    }
+
+    .message.user {
+      margin-left: auto;
+    }
+
+    .message-role {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .message-content {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .message.user .message-content {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 12px 12px 4px 12px;
+    }
+
+    .message.agent .message-content {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px 12px 12px 4px;
+    }
+
+    .message .turn-indicators {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .indicator {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+    }
+
+    .indicator.pass { color: var(--green); border-color: #2d5a3d; }
+    .indicator.fail { color: var(--red); border-color: #5a2d2d; }
+
+    .chat-input-area {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .chat-input-wrap {
+      display: flex;
+      gap: 8px;
+    }
+
+    .chat-input {
+      flex: 1;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+
+    .chat-input:focus { border-color: var(--accent); }
+
+    .chat-input:disabled { opacity: 0.5; }
+
+    .send-btn {
+      padding: 12px 20px;
+      border-radius: 12px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── PAR 패널 ── */
+    .par-panel h3 {
+      font-size: 11px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+      margin-top: 20px;
+    }
+
+    .par-panel h3:first-child { margin-top: 0; }
+
+    .par-section {
+      margin-bottom: 16px;
+    }
+
+    .par-metric {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    .par-metric .label { color: var(--text-dim); }
+    .par-metric .value { font-weight: 600; }
+    .par-metric .value.pass { color: var(--green); }
+    .par-metric .value.fail { color: var(--red); }
+    .par-metric .value.neutral { color: var(--yellow); }
+
+    .attention-slot {
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+
+    .attention-slot .slot-label {
+      font-weight: 600;
+      color: var(--accent);
+      font-size: 10px;
+      text-transform: uppercase;
+    }
+
+    .attention-slot .slot-content {
+      margin-top: 2px;
+      color: var(--text-dim);
+    }
+
+    .relevance-bar {
+      height: 3px;
+      border-radius: 2px;
+      background: var(--border);
+      margin-top: 4px;
+    }
+
+    .relevance-bar .fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--accent);
+    }
+
+    .gradient-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .gradient-badge.doing { background: #2d3a5a; color: #7c9cf5; }
+    .gradient-badge.suggesting { background: #3a5a2d; color: #4ade80; }
+    .gradient-badge.asking { background: #5a4a2d; color: #fbbf24; }
+
+    .violation-item {
+      padding: 6px 8px;
+      border-radius: 6px;
+      background: #2d1a1a;
+      border: 1px solid #5a2d2d;
+      font-size: 11px;
+      color: var(--red);
+      margin-bottom: 4px;
+    }
+
+    .constraint-item {
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: var(--surface2);
+      font-size: 11px;
+      color: var(--yellow);
+      margin-bottom: 4px;
+      border: 1px solid #4a3a1a;
+    }
+
+    .turn-selector {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .turn-btn {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-dim);
+      cursor: pointer;
+      font-size: 11px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .turn-btn.active {
+      border-color: var(--accent);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .message.system .message-content {
+      background: transparent;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      color: var(--text-dim);
+      font-size: 12px;
+      padding: 8px 12px;
+    }
+
+    .message.system .message-role { display: none; }
+
+    .step-status { font-size: 12px; }
+
+    .loading-dot {
+      display: inline-block;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <!-- 사이드바: 프로파일 갤러리 -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h1>Co-actor Studio</h1>
+        <p>LLM을 동료 에이전트로 빌드하는 프레임워크</p>
+      </div>
+      <div class="profile-list" id="profileList"></div>
+      <div class="promises-section" id="promisesSection" style="display:none">
+        <h3>Permanent Promises</h3>
+        <div id="promisesList"></div>
+      </div>
+    </div>
+
+    <!-- 메인: 대화 -->
+    <div class="main" id="mainArea">
+      <div class="empty-state" id="emptyState">
+        <div class="big-emoji">👈</div>
+        <h2>동료를 선택하세요</h2>
+        <p>왼쪽에서 대화할 동료 에이전트를 선택하면 대화가 시작됩니다</p>
+      </div>
+
+      <div id="chatArea" style="display:none; flex:1; display:none; flex-direction:column;">
+        <div class="chat-header">
+          <div class="agent-info">
+            <span class="agent-emoji" id="agentEmoji"></span>
+            <div>
+              <div class="agent-name" id="agentName"></div>
+              <div class="agent-role" id="agentRole"></div>
+            </div>
+          </div>
+          <button class="par-toggle" id="parToggle" onclick="togglePar()">PAR Loop</button>
+        </div>
+
+        <div class="chat-messages" id="chatMessages"></div>
+
+        <div class="chat-input-area">
+          <div class="chat-input-wrap">
+            <input class="chat-input" id="chatInput" placeholder="메시지를 입력하세요..."
+                   onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage()}" />
+            <button class="send-btn" id="sendBtn" onclick="sendMessage()">전송</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- PAR 패널 -->
+    <div class="par-panel" id="parPanel">
+      <h3>Turn History</h3>
+      <div class="turn-selector" id="turnSelector"></div>
+
+      <div id="parContent">
+        <div style="color:var(--text-dim); font-size:13px;">대화를 시작하면 PAR Loop 결과가 여기에 표시됩니다</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let profiles = [];
+    let currentSession = null;
+    let currentAgent = null;
+    let turnData = [];  // [{plan, audit, turn_number}]
+
+    // ── 초기화 ──
+    async function init() {
+      const res = await fetch('/api/profiles');
+      profiles = await res.json();
+      renderProfiles();
+    }
+
+    function renderProfiles() {
+      const list = document.getElementById('profileList');
+      list.innerHTML = profiles.map(p => `
+        <div class="profile-card" id="card-${p.slug}" onclick="selectProfile('${p.slug}')"
+             style="border-left: 3px solid ${p.color}">
+          <div class="emoji">${p.emoji}</div>
+          <div class="name">${p.name}</div>
+          <div class="desc">${p.description}</div>
+        </div>
+      `).join('');
+    }
+
+    async function selectProfile(slug) {
+      // UI 업데이트
+      document.querySelectorAll('.profile-card').forEach(c => c.classList.remove('selected'));
+      document.getElementById(`card-${slug}`).classList.add('selected');
+
+      const profile = profiles.find(p => p.slug === slug);
+      if (!profile) return;
+
+      // 약속 표시
+      const sec = document.getElementById('promisesSection');
+      const list = document.getElementById('promisesList');
+      sec.style.display = 'block';
+      list.innerHTML = profile.promises.map(p =>
+        `<div class="promise-badge">${p}</div>`
+      ).join('');
+
+      // 세션 시작
+      const res = await fetch(`/api/session/start?slug=${slug}`, { method: 'POST' });
+      const data = await res.json();
+      currentSession = data.session_id;
+      currentAgent = profile;
+      turnData = [];
+
+      // 채팅 UI 전환
+      document.getElementById('emptyState').style.display = 'none';
+      const chatArea = document.getElementById('chatArea');
+      chatArea.style.display = 'flex';
+
+      document.getElementById('agentEmoji').textContent = profile.emoji;
+      document.getElementById('agentName').textContent = profile.name;
+      document.getElementById('agentRole').textContent = profile.role;
+      document.getElementById('chatMessages').innerHTML = '';
+      document.getElementById('turnSelector').innerHTML = '';
+      document.getElementById('parContent').innerHTML =
+        '<div style="color:var(--text-dim);font-size:13px;">대화를 시작하면 PAR Loop 결과가 여기에 표시됩니다</div>';
+
+      document.getElementById('chatInput').focus();
+    }
+
+    async function sendMessage() {
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg || !currentSession) return;
+
+      input.value = '';
+      input.disabled = true;
+      document.getElementById('sendBtn').disabled = true;
+
+      // 사용자 메시지 표시
+      appendMessage('user', msg);
+
+      // 단계별 상태 표시
+      const statusId = appendMessage('agent',
+        '<span class="step-status" id="stepStatus">⏳ plan 중...</span>',
+        true
+      );
+
+      let currentPlan = null;
+      let currentAudit = null;
+      let currentOutput = null;
+      let currentTurnNumber = null;
+
+      try {
+        const res = await fetch('/api/turn', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: currentSession, message: msg }),
+        });
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const event = JSON.parse(line.slice(6));
+
+            if (event.step === 'plan' && event.status === 'started') {
+              updateStepStatus(statusId, '⏳ plan — 주의력·약속·관계 계획 중...');
+            } else if (event.step === 'plan' && event.status === 'done') {
+              currentPlan = event.data;
+              updateStepStatus(statusId, '✓ plan 완료 → ⏳ 응답 생성 중...');
+            } else if (event.step === 'execute' && event.status === 'started') {
+              updateStepStatus(statusId, '⏳ execute — LLM 응답 생성 중...');
+            } else if (event.step === 'execute' && event.status === 'done') {
+              currentOutput = event.data.output;
+              // 응답을 바로 표시
+              removeMessage(statusId);
+              const agentMsgId = appendMessage('agent', currentOutput, false, null);
+              // audit 진행 표시를 별도로 추가
+              const auditStatusId = appendMessage('system',
+                '<span class="step-status">⏳ audit — 약속 준수·관계 검증 중...</span>',
+                true
+              );
+              // auditStatusId를 저장해서 나중에 제거
+              window._auditStatusId = auditStatusId;
+              window._agentMsgId = agentMsgId;
+            } else if (event.step === 'audit' && event.status === 'done') {
+              currentAudit = event.data;
+              currentTurnNumber = event.turn_number;
+              // audit 상태 표시 제거
+              if (window._auditStatusId) removeMessage(window._auditStatusId);
+              // 에이전트 메시지에 인디케이터 추가
+              if (window._agentMsgId) {
+                addIndicators(window._agentMsgId, currentAudit);
+              }
+            } else if (event.step === 'complete') {
+              // PAR 데이터 저장
+              if (currentPlan && currentAudit) {
+                turnData.push({
+                  turn_number: currentTurnNumber,
+                  plan: currentPlan,
+                  audit: currentAudit,
+                });
+                updateTurnSelector();
+                showTurnPar(turnData.length - 1);
+              }
+            } else if (event.status === 'error') {
+              removeMessage(statusId);
+              if (window._auditStatusId) removeMessage(window._auditStatusId);
+              appendMessage('agent', `오류 (${event.step}): ${event.error}`);
+            }
+          }
+        }
+      } catch (e) {
+        removeMessage(statusId);
+        appendMessage('agent', `오류: ${e.message}`);
+      }
+
+      input.disabled = false;
+      document.getElementById('sendBtn').disabled = false;
+      input.focus();
+    }
+
+    function updateStepStatus(msgId, text) {
+      const el = document.getElementById(msgId);
+      if (el) {
+        const content = el.querySelector('.message-content');
+        if (content) content.innerHTML = `<span class="step-status">${text}</span>`;
+      }
+    }
+
+    function addIndicators(msgId, audit) {
+      const el = document.getElementById(msgId);
+      if (!el) return;
+      const pk = audit.promise_kept;
+      const aa = audit.attention_appropriate;
+      const rs = audit.relationship_strengthened;
+      const div = document.createElement('div');
+      div.className = 'turn-indicators';
+      div.innerHTML = `
+        <span class="indicator ${pk ? 'pass' : 'fail'}">P ${pk ? '✓' : '✗'}</span>
+        <span class="indicator ${aa ? 'pass' : 'fail'}">A ${aa ? '✓' : '✗'}</span>
+        <span class="indicator ${rs ? 'pass' : 'fail'}">R ${rs ? '✓' : '✗'}</span>
+      `;
+      el.appendChild(div);
+    }
+
+    let messageCounter = 0;
+
+    function appendMessage(role, content, isHtml = false, audit = null) {
+      const id = `msg-${messageCounter++}`;
+      const messages = document.getElementById('chatMessages');
+
+      let roleLabel = role === 'user' ? '사용자' : role === 'system' ? '' : (currentAgent?.name || '에이전트');
+
+      let indicators = '';
+      if (audit) {
+        const pk = audit.promise_kept;
+        const aa = audit.attention_appropriate;
+        const rs = audit.relationship_strengthened;
+        indicators = `
+          <div class="turn-indicators">
+            <span class="indicator ${pk ? 'pass' : 'fail'}">P ${pk ? '✓' : '✗'}</span>
+            <span class="indicator ${aa ? 'pass' : 'fail'}">A ${aa ? '✓' : '✗'}</span>
+            <span class="indicator ${rs ? 'pass' : 'fail'}">R ${rs ? '✓' : '✗'}</span>
+          </div>
+        `;
+      }
+
+      messages.innerHTML += `
+        <div class="message ${role}" id="${id}">
+          <div class="message-role">${roleLabel}</div>
+          <div class="message-content">${isHtml ? content : escapeHtml(content)}</div>
+          ${indicators}
+        </div>
+      `;
+      messages.scrollTop = messages.scrollHeight;
+      return id;
+    }
+
+    function removeMessage(id) {
+      const el = document.getElementById(id);
+      if (el) el.remove();
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // ── PAR 패널 ──
+
+    function togglePar() {
+      const panel = document.getElementById('parPanel');
+      const btn = document.getElementById('parToggle');
+      panel.classList.toggle('active');
+      btn.classList.toggle('active');
+    }
+
+    function updateTurnSelector() {
+      const sel = document.getElementById('turnSelector');
+      sel.innerHTML = turnData.map((t, i) => `
+        <button class="turn-btn ${i === turnData.length - 1 ? 'active' : ''}"
+                onclick="showTurnPar(${i})">${t.turn_number}</button>
+      `).join('');
+    }
+
+    function showTurnPar(index) {
+      const t = turnData[index];
+      if (!t) return;
+
+      // 턴 버튼 활성화
+      document.querySelectorAll('.turn-btn').forEach((b, i) => {
+        b.classList.toggle('active', i === index);
+      });
+
+      const plan = t.plan;
+      const audit = t.audit;
+
+      let html = '';
+
+      // 감사 결과
+      html += '<h3>Audit Result</h3><div class="par-section">';
+      html += metric('Promise 준수', audit.promise_kept);
+      html += metric('Attention 적절', audit.attention_appropriate);
+      html += metric('Relationship 강화', audit.relationship_strengthened);
+      if (audit.failure_layer) {
+        html += `<div class="par-metric"><span class="label">실패 층</span><span class="value fail">${audit.failure_layer}</span></div>`;
+      }
+      html += `<div class="par-metric"><span class="label">관계 영향</span><span class="value ${audit.relationship_impact === 'positive' ? 'pass' : audit.relationship_impact === 'negative' ? 'fail' : 'neutral'}">${audit.relationship_impact}</span></div>`;
+      html += '</div>';
+
+      // 위반
+      if (audit.violations && audit.violations.length > 0) {
+        html += '<h3>Violations</h3>';
+        audit.violations.forEach(v => {
+          html += `<div class="violation-item">[${v.severity}] ${v.description}</div>`;
+        });
+      }
+
+      // 주의력 프레임
+      html += '<h3>Attention Frame</h3>';
+      html += `<div class="par-metric"><span class="label">Entropy</span><span class="value ${plan.entropy > 0.7 ? 'fail' : 'pass'}">${plan.entropy.toFixed(2)}</span></div>`;
+      plan.attention.forEach(slot => {
+        html += `
+          <div class="attention-slot">
+            <div class="slot-label">${slot.label}</div>
+            <div class="slot-content">${escapeHtml(slot.content)}</div>
+            <div class="relevance-bar"><div class="fill" style="width:${slot.relevance * 100}%"></div></div>
+          </div>
+        `;
+      });
+
+      // 기울기
+      html += '<h3>Agency Gradient</h3>';
+      html += `<span class="gradient-badge ${plan.gradient}">${plan.gradient}</span>`;
+
+      // 관계 제약
+      if (plan.constraints && plan.constraints.length > 0) {
+        html += '<h3>Relationship Constraints</h3>';
+        plan.constraints.forEach(c => {
+          html += `<div class="constraint-item">${escapeHtml(c)}</div>`;
+        });
+      }
+
+      // 활성 약속
+      if (plan.promises && plan.promises.length > 0) {
+        html += '<h3>Active Promises</h3>';
+        plan.promises.forEach(p => {
+          html += `<div class="promise-badge">${escapeHtml(p)}</div>`;
+        });
+      }
+
+      document.getElementById('parContent').innerHTML = html;
+    }
+
+    function metric(label, value) {
+      const cls = value ? 'pass' : 'fail';
+      const icon = value ? '✓' : '✗';
+      return `<div class="par-metric"><span class="label">${label}</span><span class="value ${cls}">${icon}</span></div>`;
+    }
+
+    // 시작
+    init();
+  </script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # 대화 정책 엔지니어링 전략
 
-> 상위 참조: service-principles.md, agentic-engineering-principles.md
+> 상위 참조: CO-ACTOR-STANDARD.md
 > 하위 문서: conversation-phase-redesign.md, dev-testing-system.md
 > 관련 이슈: #107, #108, #109
 

@@ -1,44 +1,81 @@
-# Co-actor Engine 도입 가이드
+# Co-actor 시작하기
 
-이 문서는 기존 AI 에이전트 서비스에 Co-actor Engine을 도입하는 과정을 안내한다.
-
----
-
-## 도입 프로세스 전체 흐름
-
-```
-Step 1: 프로파일 작성 — 정체성 + 약속 + 소스 정의
-    ↓
-  compliance check --static → 통과해야 다음으로
-    ↓
-Step 2: 소스 어댑터 구현 — 서비스의 데이터를 표준 형태로 연결
-    ↓
-  compliance check --sources → 통과해야 다음으로
-    ↓
-Step 3: REPL로 대화 테스트 — 실제 대화로 동작 확인
-    ↓
-  compliance check --runtime → 통과해야 다음으로
-    ↓
-Step 4: 서비스 통합 — HTTP API 또는 미들웨어로 연결
-    ↓
-  compliance report → Co-actor Standard v0.2 준수 확인
-```
-
-각 단계에서 compliance checker가 게이트 역할을 한다. 통과하지 못하면 미비 항목을 수정하고 다시 검증한다.
+LLM을 동료(Co-actor) 에이전트로 빌드하는 가이드.
 
 ---
 
-## Step 1: 프로파일 작성
+## 빠른 시작 (5분)
 
-프로파일은 "이 에이전트는 누구이고, 어떤 약속을 하고, 어떤 소스가 있는가"를 선언하는 YAML 파일이다.
-
-### 1.1 최소 프로파일에서 시작
+### 1. 설치
 
 ```bash
+pip install co-actor
+```
+
+또는 소스에서:
+
+```bash
+git clone https://github.com/jaeyoung2026/co-actor.git
+cd co-actor
+pip install -e .
+```
+
+### 2. 샘플 에이전트로 대화해보기
+
+```bash
+# 글쓰기 코치 루미와 대화
+co-actor chat --profile profiles/writing-coach.yaml
+
+# 코드 리뷰 동료 데브와 대화
+co-actor chat --profile profiles/code-reviewer.yaml
+
+# 학습 동료 솔과 대화
+co-actor chat --profile profiles/study-buddy.yaml
+
+# 제품 전략 동료 피오와 대화
+co-actor chat --profile profiles/product-strategist.yaml
+
+# 연구 동료 코르카와 대화 (lighthouse)
+co-actor chat --profile profiles/lighthouse.yaml
+```
+
+### 3. 나만의 동료 에이전트 만들기
+
+```bash
+# 대화형으로 프로파일 생성
+co-actor init
+
+# 또는 샘플을 복사해서 시작
 cp profiles/minimal.yaml profiles/my-agent.yaml
 ```
 
-### 1.2 정체성 + 약속 정의
+---
+
+## 샘플 프로파일
+
+Co-actor는 다양한 도메인의 샘플 프로파일을 제공한다. 복사해서 수정하면 된다.
+
+| 프로파일 | 에이전트 | 역할 | 핵심 약속 |
+|---------|---------|------|----------|
+| `minimal.yaml` | (템플릿) | 최소 출발점 | 사용자 판단 대체 금지 |
+| `writing-coach.yaml` | 루미 | 글쓰기 동료 | 글을 대신 고치지 않는다. 왜 어색한지 설명한다 |
+| `code-reviewer.yaml` | 데브 | 코드 리뷰 동료 | 코드를 대신 고치지 않는다. 맥락을 먼저 파악한다 |
+| `study-buddy.yaml` | 솔 | 학습 동료 | 답을 바로 주지 않는다. 질문으로 안내한다 |
+| `product-strategist.yaml` | 피오 | 제품 전략 동료 | 방향을 대신 결정하지 않는다. 전제를 의심한다 |
+| `lighthouse.yaml` | 코르카 | 연구 동료 | 연구자의 판단을 대체하지 않는다 |
+
+모든 샘플에서 공통되는 패턴을 눈여겨보자:
+- **약속은 "하지 않는다"가 핵심이다** — 동료의 경계를 선언하는 것
+- **약속은 검증 가능한 술어다** — "친절하게" 같은 모호한 표현이 아니라 "대신 고치지 않는다"
+- **rationale이 있다** — 왜 이 약속이 필요한지. 이유가 없는 규칙은 깨지기 쉽다
+
+---
+
+## 프로파일 작성법
+
+프로파일은 "이 에이전트는 누구이고, 어떤 약속을 하는가"를 선언하는 YAML 파일이다.
+
+### 정체성 + 약속
 
 ```yaml
 identity:
@@ -49,89 +86,102 @@ identity:
       rationale: "이 약속이 존재하는 이유"
 ```
 
-약속은 "친절하게"가 아니라 **검증 가능한 술어**로 작성한다:
-- ✗ "친절하게 답한다" — 검증 불가
-- ✓ "연구자의 판단을 대체하지 않는다" — 검증 가능
-- ✓ "근거 없는 단정을 하지 않는다" — 검증 가능
-
-### 1.3 소스 역할 정의
-
-서비스의 데이터 소스를 4가지 역할로 분류한다:
-
-| 역할 | 정의 | 예시 |
-|------|------|------|
-| identity | 이 에이전트가 누구인가 (매 턴 포함) | 정체성 노드, 시드 데이터의 self 타입 |
-| memory | 이전 대화에서 축적된 맥락 | 기억 시스템, 사용자 프로필 |
-| knowledge | 외부 지식 | 논문 검색, DB, API |
-| realtime | 현재 세션의 라이브 컨텍스트 | 대화 이력, 도구 출력 |
+**좋은 약속 작성법:**
 
 ```yaml
-sources:
-  - name: my-identity
-    role: identity
-    type: adapter
-    config:
-      mode: sample
-  - name: my-memory
-    role: memory
-    type: adapter
-    config:
-      mode: sample
+# ✗ 나쁜 약속 — 검증 불가
+- predicate: "친절하게 답한다"
+- predicate: "도움이 되는 답변을 한다"
+
+# ✓ 좋은 약속 — 검증 가능
+- predicate: "사용자의 최종 판단을 대체하지 않는다"
+- predicate: "근거 없는 단정을 하지 않는다"
+- predicate: "답을 바로 알려주지 않는다. 질문으로 안내한다"
 ```
 
-### 1.4 시뮬레이터 설정
+약속을 만들 때 이 질문을 던져보자:
+- **이 에이전트가 하면 안 되는 것은 무엇인가?** → "대신 결정하지 않는다"
+- **도구와 동료의 차이가 드러나는 순간은 언제인가?** → "왜 그런지 설명한다"
+- **이 약속이 깨지면 사용자가 어떤 경험을 하는가?** → rationale
 
-REPL 테스트용 에이전트 시뮬레이터를 설정한다:
+### 시뮬레이터 설정
 
 ```yaml
 agent_simulator:
-  model: "gemini-3-flash-preview"
+  model: "gpt-4.1"          # 또는 gemini-3-flash-preview
   temperature: 0.7
   system_prompt: |
-    서비스의 실제 시스템 프롬프트를 여기에 넣는다.
+    에이전트의 시스템 프롬프트를 여기에 작성한다.
+    정체성, 대화 원칙, 행동 규칙을 포함한다.
 ```
 
-### 1.5 정적 검증
+### 소스 어댑터 (선택)
 
-```bash
-../../.venv/bin/python -m par_loop.cli compliance --profile profiles/my-agent.yaml
+에이전트에 기억, 지식, 실시간 맥락을 연결하고 싶으면 소스를 추가한다:
+
+```yaml
+sources:
+  - name: my-memory
+    role: memory          # identity | memory | knowledge | realtime
+    type: adapter
+    config:
+      mode: sample        # sample | live
 ```
 
-5개 항목을 확인한다:
-- identity 선언
-- permanent promises 존재
-- promise predicate 검증 가능성
-- 소스 역할 분류
-- identity 소스 존재
-
-모두 통과해야 다음 단계로.
+소스가 없어도 동료 에이전트는 작동한다. 프로파일의 정체성과 약속만으로도 PAR Loop이 동작한다.
 
 ---
 
-## Step 2: 소스 어댑터 구현
-
-### 2.1 어댑터 구조
-
-`adapters/` 디렉토리에 서비스별 어댑터를 만든다. lighthouse 어댑터를 참고:
-
-```
-adapters/
-└── my-service/
-    ├── __init__.py
-    ├── identity_adapter.py    # identity 역할: 매 턴 자동 포함
-    ├── memory_adapter.py      # memory 역할: 선별 활성화
-    ├── knowledge_adapter.py   # knowledge 역할: 외부 검색
-    ├── realtime_adapter.py    # realtime 역할: 대화 이력
-    └── sample_data/
-        └── nodes_sample.json  # 서비스의 시드/초기 데이터
-```
-
-### 2.2 어댑터 인터페이스
-
-각 역할별로 필수 메서드가 다르다:
+## Python API로 사용하기
 
 ```python
-# identity — 항상 전체 반환
+from engine import CoActor
+
+# 프로파일로 동료 에이전트 빌드
+agent = CoActor.from_profile("profiles/writing-coach.yaml")
+
+# 대화 시작
+conv = agent.conversation("session-001")
+
+# 턴 실행 — plan → LLM 응답 → audit 자동 순환
+response = conv.turn("이 문장 좀 봐줘: 오늘 날씨가 매우 좋아서 기분이 좋습니다.")
+
+print(response.output)              # 루미의 응답
+print(response.audit.promise_kept)   # 약속을 지켰는가
+print(response.audit.failure_layer)  # 실패 시 어느 층인가
+```
+
+---
+
+## CLI 명령어
+
+```bash
+# 대화 (간결한 출력)
+co-actor chat --profile profiles/my-agent.yaml
+
+# REPL (plan/audit 결과 실시간 확인 — 디버깅용)
+co-actor repl --profile profiles/my-agent.yaml --conversation-id test-001
+
+# 대화형 프로파일 생성
+co-actor init
+
+# Co-actor Standard 준수 검증
+co-actor compliance --profile profiles/my-agent.yaml
+
+# HTTP API 서버
+co-actor serve --port 8100
+```
+
+---
+
+## 소스 어댑터 구현 (고급)
+
+에이전트에 기억이나 외부 지식을 연결하려면 어댑터를 구현한다.
+
+### 어댑터 인터페이스
+
+```python
+# identity — 매 턴 자동 포함
 class MyIdentityAdapter:
     role = "identity"
     def get_identity(self) -> list[dict]: ...
@@ -141,7 +191,7 @@ class MyMemoryAdapter:
     role = "memory"
     def query(self, query: str, top_k: int = 5) -> list[dict]: ...
 
-# knowledge — 검색
+# knowledge — 외부 검색
 class MyKnowledgeAdapter:
     role = "knowledge"
     def search(self, query: str, top_k: int = 5) -> list[dict]: ...
@@ -153,171 +203,46 @@ class MyRealtimeAdapter:
     def add_turn(self, role: str, content: str): ...
 ```
 
-반환하는 각 항목은 다음 형태를 따른다:
+반환 형태:
 
 ```python
 {
-    "role": "memory",           # 소스 역할
-    "content": "내용",          # 실제 텍스트
-    "provenance": {             # 출처
-        "source": "소스 이름",
-        "locator": "접근 경로",
-        "fetched_at": "시점",
-    },
+    "role": "memory",
+    "content": "내용",
+    "provenance": {"source": "소스 이름", "locator": "경로", "fetched_at": "시점"},
     "reason": "이 항목이 선택된 이유",
 }
 ```
 
-### 2.3 샘플 데이터 준비
-
-**서비스의 실제 시드 데이터에서 추출한다. 임의 더미 데이터를 넣지 않는다.**
-
-lighthouse의 경우 Supabase 마이그레이션 SQL에서 94개 시드 노드를 추출했다:
-- self 타입 14개 → identity adapter
-- fact 타입 80개 → memory adapter
-
-### 2.4 소스 검증
-
-```bash
-../../.venv/bin/python -m par_loop.cli compliance --profile profiles/my-agent.yaml
-```
-
-추가로 5개 항목을 확인한다:
-- identity 소스 데이터 존재
-- identity에 정체성 노드 포함
-- memory 선별 활성화 (전체 dump 아닌지)
-- knowledge 소스 provenance 포함
-- 인사말 비검색 처리
+lighthouse 어댑터(`adapters/lighthouse/`)를 참고 구현으로 활용한다.
 
 ---
 
-## Step 3: REPL로 대화 테스트
+## Co-actor Standard 준수 검증
 
-### 3.1 실행
-
-```bash
-rm -rf ~/.par-loop/states/
-../../.venv/bin/python -m par_loop.cli repl --profile profiles/my-agent.yaml --conversation-id test-001
-```
-
-### 3.2 테스트 시나리오
-
-최소 다음 시나리오를 테스트한다:
-
-| 시나리오 | 확인 포인트 |
-|---------|-----------|
-| 인사말 | identity가 매 턴 포함되는가? 불필요한 검색이 없는가? |
-| 모호한 요청 | 바로 실행하지 않고 맥락을 좁히는가? |
-| 구체적 요청 | 적절히 실행하고 근거를 말하는가? |
-| 결정 위임 시도 | 대행하지 않고 선택지를 제시하는가? |
-| 오류 후 교정 | 인정하고 깔끔하게 수용하는가? |
-
-### 3.3 결과 읽는 법
-
-REPL 출력의 각 섹션:
-
-- **sources**: 어떤 소스에서 맥락이 수집되었는가
-- **plan**: 약속 목록, 주의력 프레임(4슬롯 + entropy), 관계 기울기(doing/suggesting/asking), 관계 제약
-- **audit**: 3축 판정(✓/✗), 위반 목록, 실패 층, 관계 영향
-
-### 3.4 런타임 검증
-
-3턴 이상 대화한 뒤:
+프로파일이 Co-actor Standard v0.2를 준수하는지 검증한다:
 
 ```bash
-../../.venv/bin/python -m par_loop.cli compliance --profile profiles/my-agent.yaml --conversation-id test-001
+co-actor compliance --profile profiles/my-agent.yaml
 ```
 
-추가로 4~5개 항목을 확인한다:
-- plan/audit 수행
-- 약속 추적
-- 관계 원장 기록
-- 주의력 프레임 기록
-- 실패 시 층 분류
+검증 항목:
+- identity 선언 + permanent promises 존재
+- promise predicate 검증 가능성
+- 소스 역할 분류 (identity/memory/knowledge/realtime)
+- plan/audit 수행 여부 (런타임 검증 시)
+- 실패 층 분류 (promise/attention/relationship)
 
 ---
 
-## Step 4: 서비스 통합
+## 튜닝 가이드
 
-### 4.1 HTTP API
-
-```bash
-../../.venv/bin/python -m par_loop.cli serve --port 8100
-```
-
-```
-POST /conversations/{id}/plan   — 턴 전 계획
-POST /conversations/{id}/audit  — 턴 후 감사
-GET  /conversations/{id}/state  — 상태 조회
-GET  /health                    — 서버 상태
-```
-
-### 4.2 미들웨어 패턴
-
-서비스의 에이전트 실행을 Co-actor Engine으로 감싼다:
-
-```python
-from par_loop import PARLoop, TurnContext, TurnResult
-
-par = PARLoop("conversation-id", adapters=[...])
-
-# 턴 전
-plan = par.plan(TurnContext(...))
-# → plan.promise_snapshot, plan.attention_frame, plan.relationship_constraints
-
-# 에이전트 실행 (서비스 코드)
-agent_output = my_agent.generate(user_message, constraints=plan)
-
-# 턴 후
-audit = par.audit(ctx, TurnResult(...))
-# → audit.promise_kept, audit.failure_layer, audit.violations
-```
-
-### 4.3 최종 compliance 리포트
-
-```bash
-../../.venv/bin/python -m par_loop.cli compliance --profile profiles/my-agent.yaml --conversation-id production-session-001
-```
-
-모든 항목 통과 시:
-```
-이 프로파일은 Co-actor Standard v0.2를 준수합니다.
-```
-
----
-
-## 튜닝
-
-### 약속이 부족할 때
-
-`audit`에서 `relationship_strengthened`가 자주 `false`이면 → 주도권 관련 약속이 빠졌을 가능성. 약속을 추가한다.
-
-### 약속이 과할 때
-
-`promise_kept`가 계속 `true`인데 대화가 딱딱하면 → 약속이 너무 세밀하다. 상위 수준으로 합친다.
-
-### 주의력이 산만할 때
-
-`attention_appropriate`가 흔들리면 → entropy를 확인. 0.7 이상이면 컨텍스트가 과적재된 것. 소스 어댑터의 top_k를 줄인다.
-
-### 관계 기울기가 치우칠 때
-
-`agency_gradient`가 계속 `doing`이면 → 에이전트가 과도하게 주도. `suggesting`이나 `asking`으로 유도하는 약속을 추가한다.
-
----
-
-## 상태 초기화
-
-```bash
-# 특정 세션 초기화
-rm ~/.par-loop/states/test-001.json
-
-# 전체 초기화
-rm -rf ~/.par-loop/states/
-
-# 새 conversation-id로 시작
-../../.venv/bin/python -m par_loop.cli repl --profile profiles/my-agent.yaml --conversation-id fresh-001
-```
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| `relationship_strengthened`가 자주 `false` | 주도권 관련 약속이 부족 | 약속 추가 |
+| `promise_kept`가 항상 `true`인데 대화가 딱딱 | 약속이 너무 세밀 | 상위 수준으로 합치기 |
+| `attention_appropriate`가 흔들림 | entropy 높음 (컨텍스트 과적재) | 어댑터 top_k 줄이기 |
+| `agency_gradient`가 계속 `doing` | 에이전트 과도 주도 | `suggesting`/`asking` 유도 약속 추가 |
 
 ---
 
@@ -325,8 +250,7 @@ rm -rf ~/.par-loop/states/
 
 | 파일 | 역할 |
 |------|------|
-| `CO-ACTOR-STANDARD.md` | 표준 문서 (뭘 지켜야 하는가) |
-| `README.md` | 엔진 설명 (왜 이것이 필요한가) |
-| `profiles/minimal.yaml` | 최소 프로파일 템플릿 |
-| `profiles/lighthouse.yaml` | lighthouse 도입 예시 |
-| `adapters/lighthouse/` | lighthouse 어댑터 참고 구현 |
+| `README.md` | 프로젝트 개요 — 철학, 배경, PAR Loop, 아키텍처 |
+| `CO-ACTOR-STANDARD.md` | 표준 문서 — 뭘 지켜야 하는가 |
+| `profiles/` | 샘플 프로파일 — 복사해서 시작 |
+| `adapters/lighthouse/` | 참고 어댑터 구현 |

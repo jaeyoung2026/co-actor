@@ -1,4 +1,4 @@
-"""에이전트 시뮬레이터 — REPL에서 에이전트 역할을 수행하는 LLM 호출."""
+"""에이전트 시뮬레이터 — Co-actor가 빌드한 에이전트의 LLM 응답 생성."""
 
 from __future__ import annotations
 

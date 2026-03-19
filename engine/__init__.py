@@ -1,21 +1,32 @@
-"""PAR Loop — Promise·Attention·Relationship 순환으로 에이전트 동료 품질을 점검하는 엔진."""
+"""Co-actor Engine — LLM을 동료(Co-actor) 에이전트로 빌드하고, PAR Loop으로 매 턴 조율·검증한다."""
 
 from __future__ import annotations
 
-from . import attention, promise, relationship, store
-from .audit import audit_turn
+import json
+import uuid
+
+from . import relationship, store
+from .llm import call_llm_json
 from .models import (
     AgencyGradient,
+    AttentionFrame,
+    AttentionSlot,
     AuditResult,
     ConversationState,
+    FailureLayer,
     PlanResult,
+    Promise,
+    PromiseStatus,
+    RelationshipEntry,
     TurnContext,
     TurnResult,
+    Violation,
 )
+from .prompts import SYSTEM, PLAN_UNIFIED, AUDIT_UNIFIED
 
 
 class PARLoop:
-    """PAR Loop 파사드. plan() → 에이전트 실행 → audit() 순환."""
+    """PAR Loop 파사드. plan() → 에이전트 실행 → audit() 순환. 각 1회 LLM 호출."""
 
     def __init__(self, conversation_id: str, adapters: list | None = None):
         self.conversation_id = conversation_id
@@ -32,7 +43,6 @@ class PARLoop:
             role = getattr(adapter, "role", "unknown")
             try:
                 if hasattr(adapter, "get_identity"):
-                    # identity 어댑터: 항상 전체 반환 (쿼리 무관)
                     items = adapter.get_identity()
                 elif hasattr(adapter, "query"):
                     items = adapter.query(query, top_k=3)
@@ -52,17 +62,65 @@ class PARLoop:
         return "\n".join(parts) if parts else ""
 
     def plan(self, ctx: TurnContext) -> PlanResult:
-        """턴 실행 전: 약속 스냅샷 + 주의력 프레임 + 관계 제약 + 기울기 힌트."""
+        """턴 실행 전: LLM 1회 호출로 주의력 프레임 + 관계 제약 + 기울기 힌트 생성."""
         active_promises = [
             p for p in self.state.promises
             if p.status.value == "active"
         ]
 
         source_context = self._collect_source_context(ctx.user_message)
+        promise_text = ", ".join(p.predicate for p in active_promises) or "(없음)"
 
-        frame = attention.build_frame(ctx, active_promises, source_context)
-        gradient_hint = relationship.compute_agency_hint(self.state.relationship_ledger)
-        constraints = relationship.generate_constraints(self.state.relationship_ledger)
+        history_text = json.dumps(
+            [e.model_dump() for e in self.state.relationship_ledger[-5:]],
+            ensure_ascii=False,
+        ) if self.state.relationship_ledger else "[]"
+
+        prompt = PLAN_UNIFIED.format(
+            user_message=ctx.user_message,
+            conversation_summary=ctx.conversation_summary,
+            active_promises=promise_text,
+            turn_number=ctx.turn_number,
+            relationship_history=history_text,
+            source_context=source_context or "(없음)",
+        )
+
+        try:
+            data = call_llm_json(prompt, system=SYSTEM)
+        except Exception:
+            data = {}
+
+        # 주의력 프레임 파싱
+        frame_data = data.get("attention_frame", {})
+        slots = []
+        for s in frame_data.get("slots", []):
+            slots.append(AttentionSlot(
+                label=s.get("label", ""),
+                content=s.get("content", ""),
+                relevance=max(0.0, min(1.0, float(s.get("relevance", 0.5)))),
+            ))
+        if not slots:
+            slots = [AttentionSlot(
+                label="current_question",
+                content=ctx.user_message[:200],
+                relevance=1.0,
+            )]
+        frame = AttentionFrame(
+            slots=slots,
+            entropy=max(0.0, min(1.0, float(frame_data.get("entropy", 0.5)))),
+        )
+
+        # 기울기 — LLM 결과 우선, 없으면 휴리스틱
+        gradient_raw = data.get("agency_gradient_hint", "")
+        try:
+            gradient_hint = AgencyGradient(gradient_raw)
+        except ValueError:
+            gradient_hint = relationship.compute_agency_hint(self.state.relationship_ledger)
+
+        # 관계 제약 — LLM 결과 + 휴리스틱 병합
+        constraints = data.get("relationship_constraints", [])
+        if not constraints:
+            constraints = relationship.generate_constraints(self.state.relationship_ledger)
 
         return PlanResult(
             promise_snapshot=active_promises,
@@ -72,39 +130,131 @@ class PARLoop:
         )
 
     def audit(self, ctx: TurnContext, result: TurnResult) -> AuditResult:
-        """턴 실행 후: 약속 준수 + 주의력 적절성 + 관계 영향 + 실패 층 분류."""
+        """턴 실행 후: LLM 1회 호출로 약속 판정 + 주의력 + 관계 진단 + 종합 감사."""
         source_context = self._collect_source_context(ctx.user_message)
 
-        # 1. 에이전트 출력에서 새 약속 추출
-        new_promises = promise.extract_promises(ctx, result.agent_output, source_context)
-        self.state.promises.extend(new_promises)
-
-        # 2. 약속 판정
-        self.state.promises = promise.judge_promises(self.state.promises, result)
-
-        # 3. 주의력 프레임 (사후 평가용)
         active = [p for p in self.state.promises if p.status.value == "active"]
-        frame = attention.build_frame(ctx, active, source_context)
+        active_json = json.dumps(
+            [{"promise_id": p.id, "predicate": p.predicate} for p in active],
+            ensure_ascii=False,
+        )
+
+        history_text = json.dumps(
+            [e.model_dump() for e in self.state.relationship_ledger[-5:]],
+            ensure_ascii=False,
+        ) if self.state.relationship_ledger else "[]"
+
+        prompt = AUDIT_UNIFIED.format(
+            user_message=ctx.user_message,
+            agent_output=result.agent_output,
+            conversation_summary=ctx.conversation_summary,
+            tools_used=result.tools_used,
+            turn_number=ctx.turn_number,
+            active_promises_json=active_json,
+            relationship_history=history_text,
+            source_context=source_context or "(없음)",
+        )
+
+        try:
+            data = call_llm_json(prompt, system=SYSTEM)
+        except Exception:
+            data = {}
+
+        # 1. 약속 판정 적용
+        judgment_map = {
+            j["promise_id"]: j
+            for j in data.get("promise_judgments", [])
+        }
+        updated_promises = []
+        for p in self.state.promises:
+            if p.id in judgment_map:
+                j = judgment_map[p.id]
+                p = p.model_copy(update={
+                    "status": PromiseStatus(j.get("status", "active")),
+                    "evidence": j.get("evidence"),
+                })
+            updated_promises.append(p)
+        self.state.promises = updated_promises
+
+        # 2. 새 약속 추가
+        for np in data.get("new_promises", []):
+            self.state.promises.append(Promise(
+                id=str(uuid.uuid4())[:8],
+                predicate=np.get("predicate", ""),
+                source_turn=ctx.turn_number,
+                is_permanent=np.get("is_permanent", False),
+            ))
+
+        # 3. 주의력 프레임 파싱
+        frame_data = data.get("attention_frame", {})
+        slots = []
+        for s in frame_data.get("slots", []):
+            slots.append(AttentionSlot(
+                label=s.get("label", ""),
+                content=s.get("content", ""),
+                relevance=max(0.0, min(1.0, float(s.get("relevance", 0.5)))),
+            ))
+        frame = AttentionFrame(
+            slots=slots,
+            entropy=max(0.0, min(1.0, float(frame_data.get("entropy", 0.5)))),
+        )
         self.state.attention_history.append(frame)
 
-        # 4. 관계 진단
-        rel_entry = relationship.diagnose_turn(
-            ctx, result, self.state.relationship_ledger,
+        # 4. 관계 진단 파싱
+        rel_data = data.get("relationship_entry", {})
+        try:
+            gradient = AgencyGradient(rel_data.get("agency_gradient", "suggesting"))
+        except ValueError:
+            gradient = AgencyGradient.suggesting
+
+        rel_entry = RelationshipEntry(
+            turn=ctx.turn_number,
+            initiative_balance=max(-1.0, min(1.0, float(rel_data.get("initiative_balance", 0.0)))),
+            agency_gradient=gradient,
+            boundary_event=rel_data.get("boundary_event"),
+            recovery_event=rel_data.get("recovery_event"),
         )
         self.state.relationship_ledger.append(rel_entry)
 
-        # 5. 종합 감사
-        audit_result = audit_turn(self.state, result, frame, rel_entry)
+        # 5. 종합 감사 결과
+        audit_data = data.get("audit_result", {})
+        violations = []
+        for p in self.state.promises:
+            if p.status == PromiseStatus.broken:
+                violations.append(Violation(
+                    promise_id=p.id,
+                    description=f"약속 위반: {p.predicate}. 근거: {p.evidence or '없음'}",
+                    severity="major" if p.is_permanent else "minor",
+                ))
+
+        failure_layer = None
+        raw_layer = audit_data.get("failure_layer")
+        if raw_layer and raw_layer in ("promise", "attention", "relationship"):
+            failure_layer = FailureLayer(raw_layer)
+
+        audit_result = AuditResult(
+            promise_kept=audit_data.get("promise_kept", len(violations) == 0),
+            attention_appropriate=audit_data.get("attention_appropriate", True),
+            relationship_strengthened=audit_data.get("relationship_strengthened", True),
+            violations=violations,
+            relationship_impact=audit_data.get("relationship_impact", "neutral"),
+            promise_revisions=[],
+            failure_layer=failure_layer,
+        )
+
         self.state.last_audit = audit_result
         self.state.turn_count = ctx.turn_number
-
-        # 6. 상태 저장
         store.save_state(self.state)
 
         return audit_result
 
 
+from .coactor import CoActor, Conversation, TurnResponse
+
 __all__ = [
+    "CoActor",
+    "Conversation",
+    "TurnResponse",
     "PARLoop",
     "TurnContext",
     "TurnResult",
