@@ -122,6 +122,7 @@ def _serialize_plan(plan):
         "entropy": plan.attention_frame.entropy,
         "gradient": plan.agency_gradient_hint.value,
         "constraints": plan.relationship_constraints,
+        "detected_scenario": plan.detected_scenario,
     }
 
 

@@ -80,6 +80,7 @@ class PlanResult(BaseModel):
     attention_frame: AttentionFrame
     relationship_constraints: list[str]
     agency_gradient_hint: AgencyGradient
+    detected_scenario: str | None = None
 
 
 class AuditResult(BaseModel):

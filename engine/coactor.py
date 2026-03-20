@@ -44,6 +44,7 @@ class Conversation:
         self.realtime_adapter = realtime_adapter
         self.history: list[dict] = []
         self.turn_number = 0
+        self.is_first_visit = True  # 첫 방문 여부 추적
 
     def _prepare_turn(self, user_message: str):
         """턴 준비: 히스토리 업데이트 + TurnContext 생성."""
@@ -85,7 +86,16 @@ class Conversation:
         if source_ctx:
             plan_context += f"\n\n[참고할 소스 컨텍스트]\n{source_ctx}"
 
-        agent_output = simulate_response(self.profile, self.history, plan_context)
+        agent_output = simulate_response(
+            self.profile,
+            self.history,
+            plan_context,
+            is_first_visit=self.is_first_visit,
+        )
+
+        # 첫 응답 이후 재방문으로 전환
+        if self.is_first_visit:
+            self.is_first_visit = False
 
         self.history.append({"role": "assistant", "content": agent_output})
         if self.realtime_adapter:
@@ -138,7 +148,7 @@ class CoActor:
         if conversation_id is None:
             conversation_id = f"session-{uuid.uuid4().hex[:8]}"
 
-        par = PARLoop(conversation_id, adapters=self.adapters)
+        par = PARLoop(conversation_id, adapters=self.adapters, profile=self.profile)
 
         # permanent promises 등록
         for pc in self.profile.identity.permanent_promises:

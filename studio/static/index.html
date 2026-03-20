@@ -793,6 +793,12 @@
       html += '<h3>Agency Gradient</h3>';
       html += `<span class="gradient-badge ${plan.gradient}">${plan.gradient}</span>`;
 
+      // 감지된 시나리오
+      if (plan.detected_scenario) {
+        html += '<h3>Detected Scenario</h3>';
+        html += `<span class="gradient-badge suggesting">${escapeHtml(plan.detected_scenario)}</span>`;
+      }
+
       // 관계 제약
       if (plan.constraints && plan.constraints.length > 0) {
         html += '<h3>Relationship Constraints</h3>';

@@ -147,6 +147,8 @@ PLAN_UNIFIED = """\
 ## 추가 컨텍스트 (소스에서 수집)
 {source_context}
 
+{scenarios_section}
+
 ## 지시
 다음을 한 번에 생성하라:
 
@@ -155,9 +157,12 @@ PLAN_UNIFIED = """\
    - 각 슬롯에 content(한국어), relevance(0~1)
    - entropy(0.0=집중, 1.0=산만)
 
-2. **agency_gradient_hint**: doing(직접 행동), suggesting(제안), asking(질문) 중 하나
+2. **agency_gradient_hint**: doing(직접 행동), suggesting(제안), asking(질문) 중 하나.
+   시나리오가 감지되면 해당 시나리오의 agency_default를 기본값으로 사용하라.
 
 3. **relationship_constraints**: 이번 턴에서 지켜야 할 관계 제약 (문장 배열)
+
+4. **detected_scenario**: 시나리오 분류 체계가 제공된 경우, 현재 사용자 행동에 해당하는 시나리오 이름. 해당 없으면 null.
 
 JSON으로 반환:
 {{
@@ -171,7 +176,8 @@ JSON으로 반환:
     "entropy": 0.3
   }},
   "agency_gradient_hint": "suggesting",
-  "relationship_constraints": []
+  "relationship_constraints": [],
+  "detected_scenario": null
 }}"""
 
 AUDIT_UNIFIED = """\
@@ -184,7 +190,7 @@ AUDIT_UNIFIED = """\
 - 사용한 도구: {tools_used}
 - 턴 번호: {turn_number}
 
-## 활성 약속
+## 활성 약속 (antipattern이 있으면 해당 패턴이 출력에 나타나는지 구체적으로 확인하라)
 {active_promises_json}
 
 ## 최근 관계 이력
@@ -193,10 +199,12 @@ AUDIT_UNIFIED = """\
 ## 추가 컨텍스트 (소스에서 수집)
 {source_context}
 
+{domain_checklist_section}
+
 ## 지시
 다음을 한 번에 판정하라:
 
-1. **promise_judgments**: 각 활성 약속의 준수 여부
+1. **promise_judgments**: 각 활성 약속의 준수 여부. antipattern이 있으면 해당 패턴이 에이전트 출력에 나타나는지 확인하라. 나타나면 broken.
 2. **new_promises**: 이번 턴에서 새로 형성된 약속 (없으면 빈 배열)
 3. **attention_frame**: 사후 주의력 프레임 (4슬롯 + entropy)
 4. **relationship_entry**: 관계 진단 (initiative_balance, agency_gradient, boundary_event, recovery_event)

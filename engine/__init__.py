@@ -28,10 +28,11 @@ from .prompts import SYSTEM, PLAN_UNIFIED, AUDIT_UNIFIED
 class PARLoop:
     """PAR Loop 파사드. plan() → 에이전트 실행 → audit() 순환. 각 1회 LLM 호출."""
 
-    def __init__(self, conversation_id: str, adapters: list | None = None):
+    def __init__(self, conversation_id: str, adapters: list | None = None, profile=None):
         self.conversation_id = conversation_id
         self.state = store.load_state(conversation_id)
         self.adapters = adapters or []
+        self.profile = profile  # Profile 객체 (시나리오, antipattern 등 참조용)
 
     def _collect_source_context(self, query: str) -> str:
         """어댑터에서 소스 컨텍스트를 수집한다."""
@@ -76,6 +77,15 @@ class PARLoop:
             ensure_ascii=False,
         ) if self.state.relationship_ledger else "[]"
 
+        # 시나리오 섹션 생성
+        scenarios_section = ""
+        if self.profile and self.profile.scenarios.classification:
+            lines = ["## 시나리오 분류 (현재 사용자 행동에 해당하는 시나리오를 detected_scenario에 적어라)"]
+            for sc in self.profile.scenarios.classification:
+                promises_str = f" | 약속: {'; '.join(sc.situational_promises)}" if sc.situational_promises else ""
+                lines.append(f"- {sc.name}: {sc.signal} (기본 기울기: {sc.agency_default}){promises_str}")
+            scenarios_section = "\n".join(lines)
+
         prompt = PLAN_UNIFIED.format(
             user_message=ctx.user_message,
             conversation_summary=ctx.conversation_summary,
@@ -83,12 +93,31 @@ class PARLoop:
             turn_number=ctx.turn_number,
             relationship_history=history_text,
             source_context=source_context or "(없음)",
+            scenarios_section=scenarios_section,
         )
 
         try:
             data = call_llm_json(prompt, system=SYSTEM)
         except Exception:
             data = {}
+
+        # 시나리오 감지 → 상황 약속 자동 주입
+        detected = data.get("detected_scenario")
+        if detected and self.profile and self.profile.scenarios.classification:
+            for sc in self.profile.scenarios.classification:
+                if sc.name == detected:
+                    for sp in sc.situational_promises:
+                        # 이미 동일한 약속이 없으면 추가
+                        existing = {p.predicate for p in self.state.promises}
+                        if sp not in existing:
+                            self.state.promises.append(Promise(
+                                id=str(uuid.uuid4())[:8],
+                                predicate=sp,
+                                source_turn=ctx.turn_number,
+                                is_permanent=False,
+                                status=PromiseStatus.active,
+                            ))
+                    break
 
         # 주의력 프레임 파싱
         frame_data = data.get("attention_frame", {})
@@ -127,6 +156,7 @@ class PARLoop:
             attention_frame=frame,
             relationship_constraints=constraints,
             agency_gradient_hint=gradient_hint,
+            detected_scenario=data.get("detected_scenario"),
         )
 
     def audit(self, ctx: TurnContext, result: TurnResult) -> AuditResult:
@@ -134,15 +164,33 @@ class PARLoop:
         source_context = self._collect_source_context(ctx.user_message)
 
         active = [p for p in self.state.promises if p.status.value == "active"]
-        active_json = json.dumps(
-            [{"promise_id": p.id, "predicate": p.predicate} for p in active],
-            ensure_ascii=False,
-        )
+
+        # antipattern을 포함한 약속 JSON 생성
+        active_items = []
+        for p in active:
+            item = {"promise_id": p.id, "predicate": p.predicate}
+            # profile에서 antipattern 찾기
+            if self.profile:
+                for pc in self.profile.identity.permanent_promises:
+                    if pc.predicate == p.predicate and pc.antipattern:
+                        item["antipattern"] = pc.antipattern
+                        break
+            active_items.append(item)
+
+        active_json = json.dumps(active_items, ensure_ascii=False)
 
         history_text = json.dumps(
             [e.model_dump() for e in self.state.relationship_ledger[-5:]],
             ensure_ascii=False,
         ) if self.state.relationship_ledger else "[]"
+
+        # 도메인 체크리스트 섹션 생성
+        domain_checklist_section = ""
+        if self.profile and self.profile.scenarios.audit_domain_checklist:
+            lines = ["## 도메인 품질 체크리스트 (추가 위반 감지, 위반 시 violations에 포함)"]
+            for item in self.profile.scenarios.audit_domain_checklist:
+                lines.append(f"- {item}")
+            domain_checklist_section = "\n".join(lines)
 
         prompt = AUDIT_UNIFIED.format(
             user_message=ctx.user_message,
@@ -153,6 +201,7 @@ class PARLoop:
             active_promises_json=active_json,
             relationship_history=history_text,
             source_context=source_context or "(없음)",
+            domain_checklist_section=domain_checklist_section,
         )
 
         try:
