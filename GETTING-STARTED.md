@@ -215,27 +215,31 @@ lighthouse(연구 논문 탐색 동료 에이전트)가 Co-actor를 구체적으
   → turn-manager 획득 (동시 턴 방지 FSM)
   │
   → PAR plan() — Gemini 1회 (generateObject)
-  │   ├─ 4개 소스 어댑터 병렬 호출
-  │   ├─ 활성 약속 스냅샷
-  │   ├─ 시나리오 분류 (detected_scenario)
+  │   ├─ 4개 소스 어댑터 병렬 호출 (행동 로그 + 시간 경과 포함)
+  │   ├─ 이야기 구성 (narrative) — 사용자 상황을 1~3문장 서사로
+  │   ├─ 이야기에서 약속 도출 (narrative_promises)
+  │   ├─ 활성 약속 스냅샷 + 시나리오 감지 (detected_scenario)
   │   ├─ 주의력 프레임 (4슬롯 + entropy)
   │   ├─ agency gradient 힌트
   │   └─ 컨텍스트 번들 (5슬롯 + 토큰 예산)
   │
   → execute() — Gemini 1회 (streamText)
   │   ├─ plan의 컨텍스트 번들 → 시스템 프롬프트로 합성
-  │   ├─ permanent + situational promises 주입
-  │   ├─ first-visit/revisit 분기
+  │   ├─ "이번 턴의 이야기" 섹션 주입 (narrative)
+  │   ├─ permanent + situational + narrative_promises 주입
+  │   ├─ first-visit/revisit 분기 (사용자 기준)
   │   ├─ 도구 6개 (search, analyze, inspect, recall, write, propose)
   │   └─ LLM이 약속 가드레일 안에서 자율 판단
   │
   → PAR audit() — Gemini 1회 (generateObject)
   │   ├─ 약속 판정 (kept/broken) + antipattern 대조
-  │   ├─ 도메인 체크리스트 검증
+  │   ├─ 도메인 체크리스트 검증 + tool output 요약 대조
+  │   ├─ narrative-행동 일관성 검증
   │   ├─ 주의력 적절성 평가
   │   ├─ 관계 진단 (initiative_balance, agency_mode)
   │   ├─ 실패 층 분류 (promise/attention/relationship)
-  │   └─ 새 situational promise 추출
+  │   ├─ 새 situational promise 추출
+  │   └─ 위반 이력 → 다음 턴 plan에 피드백
   │
   → persist (DB 저장 + 기억 추출)
 ```
@@ -299,7 +303,7 @@ revisit: |                    # 기존 사용자
 | **IdentityAdapter** | identity | 프로파일 정체성 + permanent promises + 시드 self 노드 | `adapters/identity.ts` 53줄 |
 | **MemoryAdapter** | memory | pgvector 임베딩 검색 + 강한 fact/intention 노드 + 활성 목표 | `adapters/memory.ts` 78줄 |
 | **KnowledgeAdapter** | knowledge | Working Context (세션 내 도구 결과) + 최근 워크스페이스 문서 | `adapters/knowledge.ts` 57줄 |
-| **RealtimeAdapter** | realtime | 현재 대화 ID + 포커스 문서 | `adapters/realtime.ts` 43줄 |
+| **RealtimeAdapter** | realtime | 대화 ID + 포커스 문서 + 행동 로그 + 시간 경과 | `adapters/realtime.ts` 90줄 |
 
 **IdentityAdapter** — 매 턴 무조건 포함:
 ```typescript
@@ -555,5 +559,8 @@ co-actor serve --port 8100                           # HTTP API 서버
 |------|------|
 | `README.md` | 프로젝트 개요 — 철학, PAR Loop, 아키텍처 |
 | `CO-ACTOR-STANDARD.md` | 표준 문서 — 뭘 지켜야 하는가 |
+| `docs/architecture-guide.md` | 아키텍처 가이드 — 서비스에 도입할 때 |
+| `docs/narrative-plan.md` | Narrative Plan — 이야기 구성 기반 plan 설계 |
+| `docs/research/narrative/00-synthesis.md` | Narrative 리서치 종합 — 5가지 유형 + 공통 메커니즘 |
 | `profiles/` | 샘플 프로파일 — 복사해서 시작 |
 | lighthouse 저장소 `app/server/par/adapters/` | 참고 어댑터 구현 (TS) |
