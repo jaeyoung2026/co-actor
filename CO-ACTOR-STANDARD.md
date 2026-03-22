@@ -168,6 +168,9 @@ Narrative는 거시적 서사(macro)와 미시적 서사(micro)로 구성된다.
 - 확인 필요 분기가 열려 있는데 확인 없이 단정하면 안 된다 (`MUST NOT`).
 - `execute()`에 주입하는 서사는 macro + micro에서 합성한 파생 뷰(snapshot)다. 별도 저장하지 않는다 (`SHOULD`).
 - narrative history는 전이 이벤트 중심으로 압축 관리해야 한다 (`MUST`).
+- 성숙한 서사는 짧아져야 한다. macro.thesis는 성숙할수록 간결해지며, 누적이 아니라 교체되어야 한다 (`SHOULD`).
+- 서사가 목표를 달성했거나 맥락이 완전히 교체되면 `close` 전이로 종료하고 archive에 보존한 뒤, 새 macro를 초기화해야 한다 (`MUST`).
+- archive의 lessons는 새 서사의 plan()에서 참조할 수 있어야 한다 (`SHOULD`).
 
 #### 스키마
 ```
@@ -177,6 +180,7 @@ NarrativeState {
   micro: NarrativeMicro
   branches: NarrativeBranch[]
   history: NarrativeCheckpoint[]
+  archive: NarrativeArchive[]    // 종료된 거시 서사들
   last_compacted_turn?: number
 }
 
@@ -227,8 +231,16 @@ NarrativeCheckpoint {
   macro_summary: string
   micro_summary: string
   transition_type: "micro_refresh" | "macro_refine" | "macro_shift"
-                 | "branch_opened" | "branch_resolved"
+                 | "macro_close" | "branch_opened" | "branch_resolved"
   trigger: string                    // 전이를 촉발한 사건
+}
+
+NarrativeArchive {
+  thesis: string                     // 종료 시점의 최종 결론
+  domain: string                     // 서사가 다루던 도메인
+  outcome: "completed" | "abandoned" | "superseded"
+  turns: { start: number, end: number }
+  lessons: string[]                  // 다음 서사에 넘길 교훈
 }
 ```
 
@@ -242,10 +254,27 @@ NarrativeCheckpoint {
 - 최근 3턴 micro가 기존 macro thesis와 반복 충돌
 - branch ambiguity가 2턴 이상 지속
 
-`macro_review`의 결과는 셋 중 하나다:
+`macro_review`의 결과는 넷 중 하나다:
 - `preserve`: macro 유지
-- `refine`: macro의 세부 수정
+- `refine`: macro의 세부 수정 (thesis는 교체, 누적 금지)
 - `shift`: macro 중심축 변경
+- `close`: 현재 서사 종료 → archive에 보존 → 새 macro 초기화
+
+#### close 전이 조건
+- 사용자가 완전히 다른 주제로 전환
+- 현재 목표가 달성되어 더 이상 진행할 것이 없음
+- 사용자가 명시적으로 종료 의사 표현
+
+#### close 처리
+1. 현재 macro의 최종 thesis, domain, outcome, lessons를 archive에 저장
+2. history에서 이전 서사의 요약 1개만 남기고 리셋
+3. 새 macro를 기본 상태로 초기화 (confidence 0.3, stage "탐색 초기")
+4. archive의 lessons는 새 서사의 plan() 컨텍스트에 포함
+
+#### 서사 성숙 규칙
+- refine 시 thesis는 이전에 덧붙이지 않고 **교체**한다
+- confidence가 높아질수록 thesis는 짧아져야 한다 (핵심만 남김)
+- stage/direction도 성숙하면 한 단어로 수렴해야 한다
 
 #### history 압축 정책
 
@@ -267,6 +296,8 @@ audit은 `narrative_coherence`를 보조 판정 항목으로 점검한다:
 - macro 변경 시 전이 사유가 기록되는가?
 - branch가 열려 있을 때 확인 없이 진행하지 않는가?
 - history가 무한 누적되지 않고 압축 관리되는가?
+- 서사가 종료될 때 archive에 보존되고 새 macro가 초기화되는가?
+- thesis가 성숙할수록 짧아지는가, 아니면 계속 길어지는가?
 
 ---
 
