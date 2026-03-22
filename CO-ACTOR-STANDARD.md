@@ -1,4 +1,4 @@
-# Co-actor Standard v0.2
+# Co-actor Standard v0.3
 
 > 상태: Draft
 > LLM을 동료(Co-actor) 에이전트로 빌드할 때 따르는 최소 실행 표준.
@@ -149,6 +149,124 @@ RelationshipEntry {
 #### 준수 확인
 - 고개인성 판단에서 `doing`이 남발되지 않는가?
 - 오류 후 1~2턴 안에 `recovery_event`가 기록되는가?
+
+---
+
+### 1.5 Narrative Protocol — 서사 규약
+
+Narrative는 Promise/Attention/Relationship 3축과 다른 성격을 가진다. 3축이 **제약과 검증**이라면, Narrative는 **이해와 맥락 구성**이다. Narrative는 "왜 지금 이 구성(약속, 초점, 관계 자세)이 맞는가"를 표현하는 **해석 상태층**이며, PAR를 대체하지 않고 PAR를 조직한다.
+
+Narrative는 거시적 서사(macro)와 미시적 서사(micro)로 구성된다. macro는 사용자와의 전체 여정을 서술하며 천천히 변화한다. micro는 이번 턴의 해석이며 매 턴 갱신된다. 두 서사가 누적되면서 성숙하고, 현재 스냅샷(macro + micro의 합성)이 가장 적절한 서사가 된다.
+
+#### 규약
+- 에이전트는 `NarrativeState`를 영속 상태로 유지해야 한다 (`MUST`).
+- `plan()`은 매 턴 기존 `NarrativeState`를 읽고 갱신해야 한다 (`MUST`).
+- macro 서사는 명시적 전이 사유 없이 변경하면 안 된다 (`MUST NOT`).
+- micro 서사는 매 턴 새로 생성된다 (`MUST`).
+- macro 전이 판단은 시그널 기반 + LLM 보조 혼합형이어야 한다 (`SHOULD`).
+- 서사 해석이 여럿 가능하면 `branch`에 대안을 기록하고, 확인이 필요한 분기가 있으면 `agency_mode`를 `asking` 쪽으로 전환해야 한다 (`SHOULD`).
+- 확인 필요 분기가 열려 있는데 확인 없이 단정하면 안 된다 (`MUST NOT`).
+- `execute()`에 주입하는 서사는 macro + micro에서 합성한 파생 뷰(snapshot)다. 별도 저장하지 않는다 (`SHOULD`).
+- narrative history는 전이 이벤트 중심으로 압축 관리해야 한다 (`MUST`).
+
+#### 스키마
+```
+NarrativeState {
+  version: number
+  macro: NarrativeMacro
+  micro: NarrativeMicro
+  branches: NarrativeBranch[]
+  history: NarrativeCheckpoint[]
+  last_compacted_turn?: number
+}
+
+NarrativeMacro {
+  user_model: {
+    role?: string                    // 사용자의 역할/배경
+    expertise?: "novice" | "intermediate" | "expert"
+    working_style?: string           // 탐색 성향
+    expectation_of_agent?: string    // 에이전트에 기대하는 것
+  }
+  journey: {
+    domain: string                   // 현재 작업 도메인
+    objective: string                // 궁극적 목표
+    stage: string                    // 현재 단계 (도메인별 정의)
+    direction?: string               // 현재 탐색/작업 방향
+    constraints: string[]            // 사용자가 명시한 제약
+  }
+  relationship_frame: {
+    preferred_agency?: AgencyMode    // 사용자가 선호하는 주도권 분배
+    sensitivity?: string[]           // 주의해야 할 관계적 맥락
+  }
+  thesis: string                     // 거시 서사의 자연어 요약
+  confidence: number                 // 0.0 ~ 1.0
+  updated_at_turn: number
+}
+
+NarrativeMicro {
+  turn_thesis: string                // 이번 턴의 서사
+  user_intent: string                // 이번 턴에서 사용자가 원하는 것
+  immediate_need: string             // 구체적으로 기대하는 산출물
+  proposed_response_posture: AgencyMode
+  open_questions: string[]           // 아직 확인되지 않은 것
+  ambiguity_level: number            // 0.0 ~ 1.0
+  derived_from_macro: boolean        // macro에서 자연스럽게 도출되었는가
+}
+
+NarrativeBranch {
+  id: string
+  thesis: string                     // 이 분기의 해석
+  reason: string
+  confidence: number
+  requires_confirmation: boolean
+  status: "candidate" | "confirmed" | "discarded"
+}
+
+NarrativeCheckpoint {
+  turn_id: string
+  macro_summary: string
+  micro_summary: string
+  transition_type: "micro_refresh" | "macro_refine" | "macro_shift"
+                 | "branch_opened" | "branch_resolved"
+  trigger: string                    // 전이를 촉발한 사건
+}
+```
+
+#### macro 전이 규칙
+
+기본값은 매 턴 `micro_refresh`(micro만 갱신)다. 아래 시그널 중 하나가 감지되면 `macro_review`를 실행한다:
+
+- 사용자가 목표/도메인/산출물 기대를 명시적으로 바꿈
+- stage 전이가 감지됨 (탐색 → 비교 → 결정 등)
+- 관계 기대가 바뀜 ("추천 말고 같이 따져보자")
+- 최근 3턴 micro가 기존 macro thesis와 반복 충돌
+- branch ambiguity가 2턴 이상 지속
+
+`macro_review`의 결과는 셋 중 하나다:
+- `preserve`: macro 유지
+- `refine`: macro의 세부 수정
+- `shift`: macro 중심축 변경
+
+#### history 압축 정책
+
+- 최근 N턴: 상세 유지
+- 그 이전: `macro_shift`, `branch_opened/resolved`, stage transition만 보존
+- 각 stage별 1개 summary checkpoint 생성
+- macro 변이 지점은 절대 삭제하지 않음
+
+#### audit에서의 검증
+
+audit은 `narrative_coherence`를 보조 판정 항목으로 점검한다:
+- 이번 실행이 active narrative와 명백히 모순되는가
+- narrative ambiguity가 높은데도 확인 없이 단정했는가
+- macro shift가 필요한데 micro refresh로 덮어썼는가
+- branch가 열려 있는데 asking 전환 없이 진행했는가
+
+#### 준수 확인
+- `NarrativeState`가 영속 상태로 유지되고 매 턴 갱신되는가?
+- macro 변경 시 전이 사유가 기록되는가?
+- branch가 열려 있을 때 확인 없이 진행하지 않는가?
+- history가 무한 누적되지 않고 압축 관리되는가?
 
 ---
 
@@ -342,6 +460,7 @@ audit(result)
 6. 실패를 `promise | attention | relationship` 중 하나로 분류한다
 7. 관측 로그에서 판단 이유와 상태 전이를 재구성할 수 있다
 8. 소스 어댑터를 통해 정보를 접근하며, 코어를 수정하지 않고 소스를 추가할 수 있다
+9. `NarrativeState`(macro + micro + branches + history)를 영속 상태로 유지하고, 매 턴 갱신한다
 
 ---
 
@@ -358,6 +477,9 @@ audit(result)
 - 실패를 "낮은 점수"로만 기록하고 어느 층이 깨졌는지 분류하지 않는다
 - 소스를 추가하려면 엔진 코어 코드를 수정해야 한다
 - 정체성(permanent promise)이 자동 갱신되어 표류한다
+- narrative가 매 턴 새로 만들어지고 이전 서사를 참조하지 않는다
+- macro 서사가 사유 없이 변경된다
+- 서사 분기가 열려 있는데 확인 없이 하나로 단정한다
 
 ---
 
@@ -381,3 +503,10 @@ audit(result)
 > - 기억 시스템 세부 스키마를 표준에서 제거. 지속 맥락 능력(capability)으로 격상
 > - 기억을 소스의 하나로 통합. 소스를 역할(Role)과 어댑터(Adapter) 2층으로 재구성
 > - 정체성을 별도 개념에서 "permanent promise + 역할 선언"으로 구체화. Self 기억 개념 제거
+>
+> v0.2 → v0.3 변경:
+> - Narrative Protocol 추가 (1.5). PAR 위의 "해석 상태층"으로서 거시/미시 서사, 분기, 전이, 히스토리 규약
+> - NarrativeState를 영속 상태로 규정. macro(구조화 객체) + micro(턴 단위) + branches + history
+> - macro 전이를 시그널 기반 + LLM 보조 혼합으로 규정
+> - audit에 narrative_coherence 보조 판정 항목 추가
+> - 최소 준수 프로파일에 NarrativeState 항목(9번) 추가
