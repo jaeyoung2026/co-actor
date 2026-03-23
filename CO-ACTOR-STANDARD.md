@@ -8,11 +8,13 @@
 
 ## 0. 기본 정의
 
-이 표준은 세 축을 기준으로 한다.
+이 표준은 다섯 축을 기준으로 한다.
 
 - **Promise**: 사용자와 에이전트 사이에 형성된 검증 가능한 기대
 - **Attention**: 현재 턴에서 전면에 둘 정보와 뒤로 물릴 정보를 결정하는 규율
 - **Relationship**: 주도권, 신뢰, 경계, 회복을 포함한 협업 상태
+- **Narrative**: 사용자와의 여정을 해석하고 맥락을 구성하는 해석 상태층
+- **Awareness**: 사용자의 행동과 시스템 상태를 지속적으로 관찰하고, 반응 필요 시 자율적으로 턴을 개시하는 능력
 
 이 표준을 구현하는 시스템은 매 턴 **plan → execute → audit** 순환을 수행해야 한다.
 
@@ -301,6 +303,70 @@ audit은 `narrative_coherence`를 보조 판정 항목으로 점검한다:
 
 ---
 
+### 1.6 Awareness Protocol — 인식 규약
+
+동료는 상대가 말을 걸 때만 존재하지 않는다. **상대가 무엇을 하고 있는지 지켜보고, 적절한 시점에 개입한다.**
+
+#### 전제
+- 기존 축(Promise, Attention, Relationship, Narrative)은 "사용자 턴 → plan → execute → audit" 안에서만 동작한다.
+- Awareness는 **턴 밖에서** 시스템 이벤트를 관찰하고, 반응 가치를 판단하며, 필요시 자율 턴을 개시한다.
+
+#### 규약
+- 에이전트는 사용자의 비대화 행동(검색, 문서 열람, 탭 전환 등)을 관찰할 수 있어야 한다 (`SHOULD`).
+- 관찰된 이벤트에 대해 **반응 가치 판단**(react / observe / ignore)을 수행해야 한다 (`MUST`, Awareness가 구현된 경우).
+- 반응이 필요하면 **자율 턴(autonomous turn)**을 개시할 수 있다 (`MAY`).
+- 자율 턴은 일반 턴과 동일한 plan → execute → audit 파이프라인을 따른다 (`MUST`).
+- 자율 턴의 트리거 이벤트를 관측 로그에 기록해야 한다 (`MUST`).
+- 사용자가 활발히 상호작용 중(타이핑, 스크롤 등)일 때 자율 턴으로 방해하면 안 된다 (`MUST NOT`).
+- 자율 턴의 빈도와 강도는 Relationship의 agency_mode에 따라 조절한다 (`SHOULD`).
+
+#### 이벤트 분류
+
+| 분류 | 설명 | 반응 |
+|------|------|------|
+| **react** | 에이전트의 즉각적 반응이 사용자에게 도움이 되는 이벤트 | 자율 턴 개시 |
+| **observe** | 기록하되 즉시 반응하지 않는 이벤트. 다음 사용자 턴에서 맥락으로 활용 | RealtimeAdapter로 전달 |
+| **ignore** | 에이전트 반응이 불필요한 노이즈 | 무시 |
+
+#### 스키마
+```
+AwarenessEvent {
+  event_type: string
+  event_data: Record<string, unknown>
+  timestamp: string
+  classification: "react" | "observe" | "ignore"
+  rationale?: string
+}
+
+AwarenessEvaluation {
+  events: AwarenessEvent[]
+  decision: "trigger_turn" | "accumulate" | "dismiss"
+  trigger_context?: string
+}
+```
+
+#### 자율 턴 흐름
+```
+시스템 이벤트 발생
+    ↓
+awareness evaluate(events)
+  - 이벤트 분류 (react / observe / ignore)
+  - 반응 필요 판단 (규칙 기반 또는 경량 모델)
+  - 디바운스 (짧은 시간 내 이벤트 묶기)
+    ↓
+[react] → 자율 턴 개시 (plan → execute → audit)
+[observe] → 축적 (다음 사용자 턴에서 맥락으로)
+[ignore] → 무시
+```
+
+#### 준수 확인
+- 비대화 이벤트가 수집되고 있는가?
+- 이벤트 분류에 근거가 남아 있는가?
+- 자율 턴이 사용자 활동 중 방해하지 않는가?
+- 자율 턴이 일반 턴과 동일한 파이프라인을 따르는가?
+
+---
+
 ## 2. 컨텍스트 표준 (Context Standard)
 
 ### 2.1 Context Source Role — 컨텍스트 소스 역할
@@ -491,6 +557,8 @@ audit(result)
 6. 실패를 `promise | attention | relationship` 중 하나로 분류한다
 7. 관측 로그에서 판단 이유와 상태 전이를 재구성할 수 있다
 8. 소스 어댑터를 통해 정보를 접근하며, 코어를 수정하지 않고 소스를 추가할 수 있다
+9. NarrativeState를 영속 상태로 유지하고, 매 턴 갱신한다 (`SHOULD` — Narrative 능력)
+10. 사용자의 비대화 행동을 관찰하고, 반응 가치를 판단할 수 있다 (`SHOULD` — Awareness 능력)
 9. `NarrativeState`(macro + micro + branches + history)를 영속 상태로 유지하고, 매 턴 갱신한다
 
 ---
